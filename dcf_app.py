@@ -4,13 +4,8 @@ import numpy as np
 import streamlit as st  # 匯入 Streamlit
 
 # --- 核心假設 (現在變成網頁上的選項了！) ---
-# FORECAST_YEARS = 5      (改為 st.slider)
-# ASSUMED_REVENUE_GROWTH_RATE = 0.03 (改為 st.slider)
 ASSUMED_TAX_RATE_FALLBACK = 0.20
 ASSUMED_EBIT_MARGIN_FALLBACK = 0.05
-PERPETUAL_GROWTH_RATE = 0.025 # (改為 st.slider)
-RISK_FREE_RATE = 0.03   # (改為 st.slider)
-MARKET_RETURN = 0.08    # (改為 st.slider)
 # ---
 
 # 讓 pandas 數字格式化
@@ -18,7 +13,7 @@ pd.options.display.float_format = '{:,.0f}'.format
 
 # =============================================================================
 # --- 核心 DCF 估值函數 ---
-# 我們把所有階段的程式碼，打包成一個巨大的函數
+# (這個函數跟之前「完全一樣」，我們沒有動它)
 # =============================================================================
 def run_dcf_model(ticker_symbol, forecast_years, revenue_growth, perpetual_growth, risk_free, market_return):
     """
@@ -45,7 +40,6 @@ def run_dcf_model(ticker_symbol, forecast_years, revenue_growth, perpetual_growt
             raise ValueError("找不到 'Total Revenue' (總營收)，模型無法繼續。")
         hist_revenue = income_stmt.loc['Total Revenue'].iloc[:3]
 
-        # ... (這裡的程式碼跟「強固版」完全一樣) ...
         # 1. EBIT Margin
         if 'Operating Income' in income_stmt.index:
             hist_ebit = income_stmt.loc['Operating Income'].iloc[:3]
@@ -184,7 +178,7 @@ def run_dcf_model(ticker_symbol, forecast_years, revenue_growth, perpetual_growt
         # --- 顯示最終結果 ---
         st.success("🎉 估值計算完成！")
         
-        col1, col2 = st.columns(2) # 把結果分成兩欄
+        col1, col2 = st.columns(2) 
         col1.metric("模型預估股價 (Implied Price)", f"{implied_price_per_share:,.2f}")
         col2.metric("目前市場股價 (Current Price)", f"{current_price:,.2f}")
         
@@ -196,7 +190,6 @@ def run_dcf_model(ticker_symbol, forecast_years, revenue_growth, perpetual_growt
         else:
             st.info(f"➡️ 模型結果：目前股價估值合理")
             
-        # 顯示詳細計算
         with st.expander("點此查看估值計算細節"):
             st.write(f"企業價值 (EV): {enterprise_value:,.0f}")
             st.write(f"減：淨負債 (Net Debt): {net_debt:,.0f}")
@@ -208,10 +201,9 @@ def run_dcf_model(ticker_symbol, forecast_years, revenue_growth, perpetual_growt
 
 
 # =============================================================================
-# --- Streamlit 網頁介面 ---
+# --- (v2) Streamlit 網頁介面 (使用數字輸入框) ---
 # =============================================================================
 
-# st.title 就是網頁的標題
 st.title('📈 自動 DCF 估值模型')
 st.write('這是一個使用 Python 和 Streamlit 打造的專業版 DCF 估值工具。')
 
@@ -219,32 +211,42 @@ st.write('這是一個使用 Python 和 Streamlit 打造的專業版 DCF 估值�
 st.header('1. 輸入股票代碼')
 ticker_input = st.text_input('請輸入 Yahoo Finance 的股票代碼 (例如: 2344.TW, AAPL)', '2344.TW')
 
-# --- 2. 核心假設 (用滑桿讓使用者調整) ---
+# --- 2. 核心假設 (v2 - 改用 st.number_input) ---
 st.header('2. 調整核心假設')
-col1, col2 = st.columns(2) # 讓排版好看一點
+st.write("請直接在下方欄位輸入你的假設數字 (例如 3% 請輸入 3)。")
+
+col1, col2 = st.columns(2) 
 
 with col1:
     st.subheader("增長假設")
-    p_revenue_growth = st.slider('未來營收年增率 (g)', 0.00, 0.15, 0.03, 0.005, format="%.1f%%")
-    p_perpetual_growth = st.slider('永續增長率 (g)', 0.01, 0.05, 0.025, 0.001, format="%.1f%%")
-    p_forecast_years = st.slider('預測年數', 3, 10, 5)
+    # 我們要求使用者輸入 3 (代表 3%)，而不是 0.03
+    p_revenue_growth_pct = st.number_input('未來營收年增率 (%)', min_value=0.0, max_value=50.0, value=3.0, step=0.5, format="%.1f")
+    p_perpetual_growth_pct = st.number_input('永續增長率 (%)', min_value=0.0, max_value=10.0, value=2.5, step=0.1, format="%.1f")
+    p_forecast_years = st.number_input('預測年數 (年)', min_value=1, max_value=20, value=5, step=1)
 
 with col2:
     st.subheader("折現率假設")
-    p_risk_free = st.slider('無風險利率 (Rf)', 0.01, 0.05, 0.03, 0.001, format="%.1f%%")
-    p_market_return = st.slider('市場年化報酬率 (Rm)', 0.05, 0.12, 0.08, 0.005, format="%.1f%%")
+    p_risk_free_pct = st.number_input('無風險利率 (%)', min_value=0.0, max_value=10.0, value=3.0, step=0.1, format="%.1f")
+    p_market_return_pct = st.number_input('市場年化報酬率 (%)', min_value=0.0, max_value=20.0, value=8.0, step=0.5, format="%.1f")
+
 
 # --- 3. 執行按鈕 ---
 st.header('3. 執行估值')
 
-# st.button 就是網頁上的按鈕
 if st.button('🚀 開始估值！', type="primary"):
     if ticker_input:
         with st.spinner('正在抓取財報並執行複雜的 DCF 計算中... 請稍候...'):
-            # 當按鈕被按下時，才去呼叫我們上面寫好的 DCF 函數
+            
+            # (重要！) 把使用者輸入的 3 (%) 轉換回 0.03 
+            p_revenue_growth = p_revenue_growth_pct / 100.0
+            p_perpetual_growth = p_perpetual_growth_pct / 100.0
+            p_risk_free = p_risk_free_pct / 100.0
+            p_market_return = p_market_return_pct / 100.0
+            
+            # 把轉換後的值，傳入 DCF 函數
             run_dcf_model(
                 ticker_symbol=ticker_input,
-                forecast_years=p_forecast_years,
+                forecast_years=p_forecast_years, # 年份不需要轉換
                 revenue_growth=p_revenue_growth,
                 perpetual_growth=p_perpetual_growth,
                 risk_free=p_risk_free,
